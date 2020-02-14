@@ -1,7 +1,7 @@
 @[Link("opus")]
 lib LibOpus
   enum Code : LibC::Int
-    OK               = 0
+    OK               =  0
     BAD_ARG          = -1
     BUFFER_TOO_SMALL = -2
     INTERNAL_ERROR   = -3
