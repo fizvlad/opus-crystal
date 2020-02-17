@@ -115,24 +115,37 @@ module DCA
     frame_size = 960
     channels = 2
     meta = self.metadata
-    output.write_bytes(meta.size.as(Int32), IO::ByteFormat::LittleEndian)
+    output.write_bytes(meta.size.to_i32, IO::ByteFormat::LittleEndian)
     output.print(meta)
 
     # Audio data
     opus = Opus::Encoder.new(sample_rate, frame_size, channels)
     encoded_data = IO::Memory.new # TODO: Might be useful to set some default size
-    Process.run("ffmpeg", ["-loglevel 0 -f s16le -ar #{sample_rate} -ac #{channels}"], input: input, output: encoded_data)
+    Process.run(
+      "ffmpeg",
+      [
+        "-i", "pipe:0",
+        "-loglevel", "0",
+        "-f", "s16le",
+        "-ar", sample_rate.to_s,
+        "-ac", channels.to_s,
+        "pipe:1",
+      ],
+      shell: true,
+      input: input, output: encoded_data, error: STDOUT
+    )
+    encoded_data.rewind
 
-    buffer = Slice(UInt8).new(frame_size)
+    buffer = Bytes.new(frame_size * channels)
     until encoded_data.read(buffer).zero?
       # TODO: Sometime actual size of read data is less than frame_size
 
-      # TODO: Write opus data
-      # opus_encoded_data = opus.encode(temp_buff.to_a)
-      # output.write_bytes(opus_encoded_data.size.as(Int16), IO::ByteFormat::LittleEndian)
-      # output.write(opus_encoded_data)
+      opus_encoded_data = opus.encode(buffer)
+      output.write_bytes(opus_encoded_data.size.to_i16, IO::ByteFormat::LittleEndian)
+      output.write(opus_encoded_data)
     end
   end
 end
 
 DCA.encode(STDIN, STDOUT)
+# DCA.encode(File.open("music.mp3"), File.open("music.dca", "w"))
