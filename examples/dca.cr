@@ -105,4 +105,34 @@ module DCA
       self.metadata(str)
     end
   end
+
+  # Reads data from provided `IO` object and print encoded data to output `IO`.
+  def self.encode(input : IO, output : IO) : Nil
+    # Metadata
+    output.print("DCA1")
+    # TODO: Provide following data as options and pass it to metadata
+    sample_rate = 48000
+    frame_size = 960
+    channels = 2
+    meta = self.metadata
+    output.write_bytes(meta.size.as(Int32), IO::ByteFormat::LittleEndian)
+    output.print(meta)
+
+    # Audio data
+    opus = Opus::Encoder.new(sample_rate, frame_size, channels)
+    encoded_data = IO::Memory.new # TODO: Might be useful to set some default size
+    Process.run("ffmpeg", ["-loglevel 0 -f s16le -ar #{sample_rate} -ac #{channels}"], input: input, output: encoded_data)
+
+    buffer = Slice(UInt8).new(frame_size)
+    until encoded_data.read(buffer).zero?
+      # TODO: Sometime actual size of read data is less than frame_size
+
+      # TODO: Write opus data
+      # opus_encoded_data = opus.encode(temp_buff.to_a)
+      # output.write_bytes(opus_encoded_data.size.as(Int16), IO::ByteFormat::LittleEndian)
+      # output.write(opus_encoded_data)
+    end
+  end
 end
+
+DCA.encode(STDIN, STDOUT)
