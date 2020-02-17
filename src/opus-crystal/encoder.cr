@@ -42,17 +42,16 @@ module Opus
     end
 
     # Encode data.
-    def encode(data : StaticArray(Int16, N)) : StaticArray(UInt8, M)
+    def encode(data : Bytes) : Bytes
       expected_length = @frame_size * @channels
       if data.size != expected_length
         puts "Warning: Unexpected data size! (Expected #{expected_length}, got #{data.size})"
         # TODO: Correctly handle this case
       end
 
-      buffer = StaticArray.new(UInt8, expected_length * sizeof(Int16) / sizeof(UInt8)) # Temporary buffer. Actual data will require less memory.
-      out_length = LibOpus.encode(@encoder, data, @frame_size, buffer, buffer.size)
-
-      result = StaticArray.new(UInt8, out_length) { |i| buffer[i] }
+      buffer = Bytes.new(expected_length) # Temporary buffer. Actual data will require less memory.
+      out_length = LibOpus.encode(@encoder, data.to_unsafe.as(Int16*), @frame_size, buffer, buffer.size)
+      Bytes.new(out_length) { |i| buffer[i] }
     end
   end
 end
