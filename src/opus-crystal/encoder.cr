@@ -9,8 +9,12 @@ module Opus
 
     # Allocates memory for new encoder and initialize it.
     def initialize(@sample_rate, @frame_size, @channels)
-      @encoder = LibOpus.encoder_create(@sample_rate, @channels, LibOpus::Application::AUDIO, out error)
-      # TODO: Handle error
+      error = LibOpus::Code::OK
+      @encoder = LibOpus.encoder_create(@sample_rate, @channels, LibOpus::Application::AUDIO, pointerof(error))
+      if error != LibOpus::Code::OK
+        puts "Error code received when creating encoder"
+        # TODO: Properly handle this.
+      end
     end
 
     # Cleans up memory after encoder.
@@ -42,13 +46,13 @@ module Opus
       expected_length = @frame_size * @channels
       if data.size != expected_length
         puts "Warning: Unexpected data size! (Expected #{expected_length}, got #{data.size})"
-	# TODO: Correctly handle this case
+        # TODO: Correctly handle this case
       end
 
-      buffer = StaticArray(UInt8, @frame_size * @channels * sizeof(Int16) / sizeof(UInt8))
+      buffer = StaticArray.new(UInt8, expected_length * sizeof(Int16) / sizeof(UInt8)) # Temporary buffer. Actual data will require less memory.
       out_length = LibOpus.encode(@encoder, data, @frame_size, buffer, buffer.size)
 
-      result = StaticArray(UInt8, out_length) { |i| buffer[i] }
+      result = StaticArray.new(UInt8, out_length) { |i| buffer[i] }
     end
   end
 end
