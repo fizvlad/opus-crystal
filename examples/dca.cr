@@ -1,5 +1,7 @@
 require "json"
-require "../src/opus-crystal"
+require "option_parser"
+
+require "../src/opus-crystal" # If you are to use this in your app. Make sure to change this.
 
 # This executable turns audio file into DCA format: https://github.com/bwmarrin/dca#dca
 # Use of this executable requires installed ffmpeg (besides opus ofc).
@@ -107,10 +109,12 @@ module DCA
   end
 
   # Reads data from provided `IO` object and print encoded data to output `IO`.
-  def self.encode(input : IO, output : IO) : Nil
+  # Provided block will be yielded with `IO::Memory` containing audio data. This
+  # allows you to affect sound in any way you want.
+  # TODO: Add ability to change metadata (Current settings are `sample_rate = 48000`, `frame_size = 960`, `channels = 2`).
+  def self.encode(input : IO, output : IO, &) : Nil
     # Metadata
     output.print("DCA1")
-    # TODO: Provide following data as options and pass it to metadata
     sample_rate = 48000
     frame_size = 960
     channels = 2
@@ -120,7 +124,7 @@ module DCA
 
     # Audio data
     opus = Opus::Encoder.new(sample_rate, frame_size, channels)
-    encoded_data = IO::Memory.new # TODO: Might be useful to set some default size
+    audio_data = IO::Memory.new # TODO: Might be useful to set some default size
     Process.run(
       "ffmpeg",
       [
@@ -132,20 +136,77 @@ module DCA
         "pipe:1",
       ],
       shell: true,
-      input: input, output: encoded_data, error: STDOUT
+      input: input, output: audio_data, error: STDOUT
     )
-    encoded_data.rewind
+    audio_data.rewind
+    yield audio_data
+    audio_data.rewind
 
-    buffer = Bytes.new(frame_size * channels)
-    until encoded_data.read(buffer).zero?
-      # TODO: Sometime actual size of read data is less than frame_size
-
+    buffer = Bytes.new(opus.input_length)
+    while real_length = audio_data.read(buffer)
+      break if real_length.zero?
+      (real_length...buffer.size).each { |i| buffer[i] = 0 } # Silence
       opus_encoded_data = opus.encode(buffer)
       output.write_bytes(opus_encoded_data.size.to_i16, IO::ByteFormat::LittleEndian)
       output.write(opus_encoded_data)
     end
   end
+
+  # Reads data from provided `IO` object and print encoded data to output `IO`.
+  def self.encode(input : IO, output : IO) : Nil
+    self.encode(input, output) do |memory|
+      # Do nothing
+    end
+  end
 end
 
-DCA.encode(STDIN, STDOUT)
-# DCA.encode(File.open("music.mp3"), File.open("music.dca", "w"))
+# App itself
+volume = 1.0
+input_path = ""
+output_path = ""
+
+# CLI
+OptionParser.parse do |parser|
+  parser.banner = "Usage: dca [options]"
+  parser.on("-h", "--help", "Show this help") do
+    puts parser
+    exit(0)
+  end
+  parser.on("-v FLOAT", "--volume=FLOAT", "Add volume multiplier (Default: 1.0)") { |val| volume = val.to_f }
+  parser.on("-i FILE", "--input=FILE", "Specify input audio file (Default: STDIN)") { |val| input_path = val.to_s }
+  parser.on("-o FILE", "--output=FILE", "Name of file to ouput DCA (DEFAUL: STDOUT)") { |val| output_path = val.to_s }
+  parser.invalid_option do |flag|
+    STDERR.puts "ERROR: #{flag} is not a valid option."
+    STDERR.puts parser
+    exit(1)
+  end
+end
+# Actual encoding
+io_i = if input_path.empty?
+         STDIN
+       else
+         File.open(input_path, "r")
+       end
+io_o = if output_path.empty?
+         STDOUT
+       else
+         File.open(output_path, "w")
+       end
+DCA.encode(io_i, io_o) do |memory|
+  unless volume == 1.0
+    while memory.peek
+      begin
+        sample = memory.read_bytes(Int16, IO::ByteFormat::LittleEndian)
+        sample = begin
+          (sample * volume).to_i16 # This will make sound to 50%
+        rescue OverflowError
+          sample > 0 ? Int16::MAX : Int16::MIN
+        end
+        memory.seek(-2, IO::Seek::Current)
+        memory.write_bytes(sample, IO::ByteFormat::LittleEndian)
+      rescue IO::EOFError
+        break
+      end
+    end
+  end
+end
