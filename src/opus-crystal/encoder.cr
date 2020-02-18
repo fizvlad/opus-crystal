@@ -12,8 +12,7 @@ module Opus
       error = LibOpus::Code::OK
       @encoder = LibOpus.encoder_create(@sample_rate, @channels, LibOpus::Application::AUDIO, pointerof(error))
       if error != LibOpus::Code::OK
-        puts "Error code received when creating encoder"
-        # TODO: Properly handle this.
+        raise OpusError.new("Failed to create Opus encoder. Error code: #{error}")
       end
     end
 
@@ -45,8 +44,7 @@ module Opus
     def encode(data : Bytes) : Bytes
       expected_length = @frame_size * @channels
       if data.size != expected_length
-        puts "Warning: Unexpected data size! (Expected #{expected_length}, got #{data.size})"
-        # TODO: Correctly handle this case
+        raise OpusError.new("Unexpected slice size! (Expected #{expected_length}, got #{data.size})")
       end
 
       buffer = Bytes.new(expected_length) # Temporary buffer. Actual data will require less memory.
